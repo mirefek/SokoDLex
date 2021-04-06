@@ -69,7 +69,7 @@ class Deadlock:
     def check_dependencies(self, base_state, fw_mode = True):
         state = self.to_soko_state(base_state)
         assert not state.is_solved()
-        for action in positions_true(state.action_mask()):
+        for action in positions_true(state.action_mask(fw_mode = fw_mode)):
             state2 = state.move(*action, fw_mode = fw_mode)
             dl2 = self.descendants[action]
             assert dl2.check_state(state2)

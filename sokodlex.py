@@ -11,7 +11,7 @@ import random
 
 from move_stack import MoveStack
 from data_loader import load_xsb_levels
-from soko_state import level_to_state
+from soko_state import *
 from directions import *
 from helpers import *
 from heuristic import heurictic_to_storage
@@ -33,7 +33,8 @@ class SokoGUI(Gtk.Window):
         self.level_i = np.clip(level_i, 0, len(self.levels)-1)
         self.var_dir = var_dir
 
-        self.make_move_stack()
+        self.fw_mode = True
+        self.make_move_stacks()
 
         self.darea = Gtk.DrawingArea()
         self.darea.connect("draw", self.on_draw)
@@ -59,19 +60,86 @@ class SokoGUI(Gtk.Window):
         self.connect("delete-event", Gtk.main_quit)
         self.show_all()
 
-    def make_move_stack(self):
+    def make_move_stacks(self):
         print("Level {}".format(self.level_i))
         state = level_to_state(self.levels[self.level_i-1])
+        dual_state = level_to_dual_state(self.levels[self.level_i-1])
         level_basename = self.levelset_basename + '_l' + str(self.level_i)
         level_var_dir = os.path.join(self.var_dir, level_basename)
         os.makedirs(level_var_dir, exist_ok = True)
         dl_fname = os.path.join(level_var_dir, 'deadlocks')
-        self.move_stack = MoveStack(state, dl_fname = dl_fname)
+        dual_dl_fname = os.path.join(level_var_dir, 'dual_deadlocks')
+        move_stack = MoveStack(state, dl_fname = dl_fname)
+        dual_move_stack = MoveStack(dual_state, dl_fname = dual_dl_fname, fw_mode = False)
+        self.move_stacks = [
+            dual_move_stack, move_stack
+        ]
 
+    @property
+    def move_stack(self): return self.move_stacks[self.fw_mode]
+    @property
+    def dual_move_stack(self): return self.move_stacks[not self.fw_mode]
     @property
     def state(self): return self.move_stack.state
     @property
     def base_state(self): return self.move_stack.base_state
+    @property
+    def dual_state(self): return self.dual_move_stack.base_state
+    @property
+    def storekeeper_goal(self):
+        if self.fw_mode and self.dual_move_stack.is_on_start():
+            return None
+        sk = self.dual_move_stack.state.storekeeper
+        if self.dual_state.storekeepers[sk]: return sk
+        else: return self.dual_state.storekeeper
+
+    def heuristic(self, state, fw_mode):
+        storages = self.dual_state.sub_boxes
+        return heurictic_to_storage(state, fw_mode, storages = storages)
+    def is_solved(self):
+        return self.state.is_solved(
+            other_goal = (self.dual_state.sub_boxes, self.storekeeper_goal)
+        )
+    def search_step(self, min_move = None):
+        if self.is_solved(): return False
+        elif self.move_stack.redo(): return True
+
+        if self.move_stack.search_step(heuristic = self.heuristic, min_move = min_move):
+            return True
+        if self.move_stack.is_solved(): self.dual_move_stack.reset()
+        return False
+    def auto_move(self):
+        if not self.state.sub_full:
+            self.move_stack.change_sub_boxes(self.base_state.sub_boxes)
+
+        if self.is_solved():
+            if self.dual_move_stack.is_on_start(): return False
+            action = dual_action(self.dual_move_stack.last_action)
+            if not self.move_stack.is_on_end() and action == self.move_stack.next_action:
+                self.move_stack.redo()
+            else: self.move_stack.apply_action(action)
+            self.dual_move_stack.undo()
+            return True
+        elif self.move_stack.redo(): return True
+        else:
+            action = self.move_stack.choose_action(
+                heuristic = self.heuristic)
+            if action is None: return False
+            self.move_stack.apply_action(action)
+            return True
+    def basic_move(self, d):
+        sk2 = dir_shift(d, self.state.storekeeper)
+        if self.state.storekeepers[sk2]:
+            self.move_stack.set_storekeeper(sk2)
+            return True
+        elif self.state.sub_boxes[sk2]:
+            y,x = sk2
+            if not self.fw_mode: d = op_dir(d)
+            action = y-1,x-1,d
+            if self.state.action_mask(self.fw_mode)[action]:
+                self.move_stack.apply_action(action)
+                return True
+        return False
 
     def on_key_press(self,w,e):
 
@@ -81,30 +149,45 @@ class SokoGUI(Gtk.Window):
 
         shift_pressed = bool(e.state & Gdk.ModifierType.SHIFT_MASK)
 
-        if keyval_name == 'p':
+        if keyval_name in key_to_dir:
+            d = key_to_dir[keyval_name]
+            redraw = self.basic_move(d)
+            self.cancel(redraw = redraw)
+        elif keyval_name == 'space':
+            self.move_stack.revert_generalizations()
+            self.fw_mode = not self.fw_mode
+            self.cancel()
+        elif keyval_name == 's':
+            self.search_step()
+            self.cancel()
+        elif keyval_name == 'S':
             if self.timer_id is None:
                 self.cancel()
-                self.autoplay_start()
+                self.timer_start(self.autosearch, self.move_stack.cur_move_i)
             else:
                 self.cancel()
-        elif keyval_name == 's':
-            self.move_stack.search_step(heuristic = heurictic_to_storage)
-            self.cancel()
+        elif keyval_name == 'p':
+            if self.timer_id is None:
+                self.cancel()
+                self.timer_start(self.autoplay, None)
+                self.move_stack.revert_generalizations()
+            else:
+                self.cancel()
         elif keyval_name == "Page_Up":
             if self.level_i > 1:
                 self.cancel()
                 self.level_i -= 1
-                self.make_move_stack()
+                self.make_move_stacks()
                 self.darea.queue_draw()
         elif keyval_name == "Page_Down":
             if self.level_i < len(self.levels):
                 self.cancel()
                 self.level_i += 1
-                self.make_move_stack()
+                self.make_move_stacks()
                 self.darea.queue_draw()
         elif keyval_name in ('Return', 'r', 'R'):
             if shift_pressed:
-                self.move_stack.set_cur_move_i(len(self.move_stack.moves))
+                self.move_stack.redo_max()
             else: self.move_stack.reset()
             self.cancel()
         elif keyval_name == 'R':
@@ -158,16 +241,22 @@ class SokoGUI(Gtk.Window):
 
     def on_button_press(self, w, e):
         if e.type != Gdk.EventType.BUTTON_PRESS: return # ignore double clicks etc.
-        self.cancel()
+        self.cancel(redraw = False)
 
         if e.button == 1:
             pos = self.mouse_to_square(e, base1_index = False)
             if pos is None: return
             y,x = pos
-            action_mask = self.state.action_mask()[pos]
+            action_mask = self.state.action_mask(fw_mode = self.fw_mode)[pos]
             if action_mask.any():
                 self.dragged = pos, action_mask
                 self.darea.queue_draw()
+        elif e.button == 2:
+            pos = self.mouse_to_square(e, base1_index = True)
+            if pos is None or not self.state.storekeepers[pos]: return
+            self.move_stack.set_storekeeper(pos)
+            self.darea.queue_draw()
+
         elif e.button == 3:
             pos = self.mouse_to_square(e)
             if pos is None: return
@@ -238,28 +327,41 @@ class SokoGUI(Gtk.Window):
 
             self.move_stack.apply_action(box+(d,))
             box2 = dir_shift(d, box)
-            self.dragged = box2, self.state.action_mask()[box2]
+            self.dragged = box2, self.state.action_mask(fw_mode = self.fw_mode)[box2]
             self.darea.queue_draw()
 
     def cancel(self, redraw = True):
-        self.autoplay_stop()
+        redraw = redraw or self.dragged
+        canceled = (
+            self.timer_id is not None
+            or self.dragged is not None
+            or self.painting is not None
+        )
+        self.timer_stop()
         self.dragged = None
         self.painting = None
         if redraw: self.darea.queue_draw()
+        return canceled
 
-    def autoplay_stop(self):
+    def timer_stop(self):
         if self.timer_id:
             GLib.source_remove(self.timer_id)
             self.timer_id = None
-    def autoplay_start(self):
-        self.autoplay_stop()
-        self.timer_id = GLib.timeout_add(30, self.autoplay, None)
-    def autoplay(self, user_data):
-        actions = list(positions_true(self.state.action_mask()))
-        if not actions: self.move_stack.reset()
-        else: self.move_stack.apply_action(random.choice(actions))
+    def timer_start(self, f, arg):
+        self.timer_stop()
+        self.timer_id = GLib.timeout_add(30, f, arg)
+
+    def autoplay(self, arg):
+        repeat = self.auto_move()
         self.darea.queue_draw()
-        return True # so that it is called again
+        if not repeat: self.timer_id = None
+        return repeat
+
+    def autosearch(self, min_move):
+        repeat = self.search_step(min_move = min_move)
+        self.darea.queue_draw()
+        if not repeat: self.timer_id = None
+        return repeat # so that it is called again
 
     # drawing
     def draw_to_yx(self, cr, draw_method, yx, base1_index = False):
@@ -279,6 +381,17 @@ class SokoGUI(Gtk.Window):
         cr.rectangle(-0.51, -0.51, 1.02, 1.02)
         cr.set_source_rgb(0, 0, 0)
         cr.fill()
+        cr.set_source_rgb(0.3, 0.3, 0.3)
+        cr.set_line_width(0.07)
+        y = 0.32
+        if not self.fw_mode:
+            for i in range(3):
+                x = (i-1)*0.2+0.1
+                x2 = x-0.2
+                cr.move_to(x,-y)
+                cr.line_to(x2,0)
+                cr.line_to(x,y)
+                cr.stroke()
     def draw_blocked(self, cr):
         cr.rectangle(-0.51, -0.51, 1.02, 1.02)
         cr.set_source_rgb(1, 0.8, 0.8)
@@ -309,12 +422,31 @@ class SokoGUI(Gtk.Window):
         cr.set_source_rgb(0, 0, 0)
         cr.set_line_width(0.05)
         cr.stroke()
+    def draw_happy_storage(self, cr):
+        cr.rectangle(-0.25, -0.25, 0.5, 0.5)
+        cr.set_source_rgb(0, 0.5, 0)
+        cr.set_line_width(0.08)
+        cr.stroke()
+    def draw_storekeeper(self, cr):
+        cr.arc(0, 0, 0.15, 0, 2*np.pi)
+        cr.set_source_rgb(0, 0, 1)
+        cr.fill()
     def draw_ghost_storekeeper(self, cr):
-        cr.arc(0, 0, 0.2, 0, 2*np.pi)
+        cr.arc(0, 0, 0.15, 0, 2*np.pi)
         cr.set_source_rgba(0, 0, 0.5, 0.3)
         cr.fill()
+    def draw_storekeeper_goal(self, cr):
+        cr.arc(0, 0, 0.15, 0, 2*np.pi)
+        cr.set_source_rgb(0, 0, 0)
+        cr.set_line_width(0.05)
+        cr.stroke()
+    def draw_happy_storekeeper_goal(self, cr):
+        cr.arc(0, 0, 0.15, 0, 2*np.pi)
+        cr.set_source_rgb(0, 0.5, 0)
+        cr.set_line_width(0.05)
+        cr.stroke()
 
-    def on_draw(self, wid, cr):
+    def on_draw(self, win, cr):
 
         # fitting to the window center
 
@@ -324,7 +456,7 @@ class SokoGUI(Gtk.Window):
         self.size = np.array([screen_width, screen_height])
 
         cr.rectangle(0,0, screen_width, screen_height)
-        if self.move_stack.is_solved():
+        if self.is_solved():
             cr.set_source_rgb(0.0, 0.5, 0.0)
         elif self.move_stack.is_locked():
             if self.move_stack.is_locked_full():
@@ -349,23 +481,33 @@ class SokoGUI(Gtk.Window):
         cr.fill()
 
         # drawing the level
-        self.draw_state(cr, self.state, self.base_state)
+        self.draw_state(cr)
 
-    def draw_state(self, cr, state, base_state):
-        available, sub_boxes, sup_boxes, storages, storekeepers = \
-            np.transpose(state.export(), [2,0,1])
-        _, base_sub_boxes, base_sup_boxes, _, _ = \
-            np.transpose(base_state.export(), [2,0,1])
+    def draw_state(self, cr):
+        state = self.state
+        base_state = self.base_state
+        dual_state = self.dual_state
+        available = state.available[1:-1,1:-1]
+        sub_boxes = state.sub_boxes[1:-1,1:-1]
+        sup_boxes = state.sup_boxes[1:-1,1:-1]
+        storekeepers = state.storekeepers[1:-1,1:-1]
+        storages = dual_state.sub_boxes[1:-1,1:-1]
+        base_sub_boxes = base_state.sub_boxes[1:-1,1:-1]
+        base_sup_boxes = base_state.sup_boxes[1:-1,1:-1]
+        sk_goal = self.storekeeper_goal
 
         blocked = available & ~sup_boxes
-        blockable = available & ~base_sup_boxes & ~blocked
         disabled_boxes = base_sub_boxes & ~sub_boxes
 
-        self.draw_array(cr, self.draw_blockable, blockable)
+        if not base_state.sub_full:
+            blockable = available & ~base_sup_boxes & ~blocked
+            self.draw_array(cr, self.draw_blockable, blockable)
         self.draw_array(cr, self.draw_blocked, blocked)
         self.draw_array(cr, self.draw_box, sub_boxes)
         self.draw_array(cr, self.draw_disabled_box, disabled_boxes)
         self.draw_array(cr, self.draw_ghost_storekeeper, storekeepers)
+        self.draw_to_yx(cr, self.draw_storekeeper, state.storekeeper,
+                        base1_index = True)
         self.draw_array(cr, self.draw_wall, ~available)
         if self.dragged is not None:
             box, action_mask = self.dragged
@@ -373,7 +515,16 @@ class SokoGUI(Gtk.Window):
             for d in directions:
                 if action_mask[d]:
                     self.draw_to_yx(cr, self.draw_ghost_box, dir_shift(d, box))
-        self.draw_array(cr, self.draw_storage, storages)
+        self.draw_array(cr, self.draw_storage, storages & ~sub_boxes)
+        self.draw_array(cr, self.draw_happy_storage, storages & sub_boxes)
+        if sk_goal is not None:
+            if state.storekeepers[sk_goal]:
+                self.draw_to_yx(cr, self.draw_happy_storekeeper_goal, sk_goal,
+                                base1_index = True)
+            else:
+                self.draw_to_yx(cr, self.draw_storekeeper_goal, sk_goal,
+                                base1_index = True)
+        self.draw_array(cr, self.draw_storage, storages & ~sub_boxes)
 
 if __name__ == "__main__":
 

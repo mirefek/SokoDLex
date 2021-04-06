@@ -14,7 +14,8 @@ class MoveStack:
         "state_locks",  # deadlocks corresponding to gener_states
         "moves",        # stack of moves, one shorter that the ones of states
         "cur_move_i",   # the current move index
-        "deadlocks", # structure for searching deadlocks
+        "deadlocks",    # structure for searching deadlocks
+        "first_generalization", # index of first move where state is not sub_full
     ]
 
     def __init__(self, first_state, dl_fname = None, fw_mode = True):
@@ -22,7 +23,10 @@ class MoveStack:
         self.fw_mode = fw_mode
         self.base_states = [first_state]
         self.gener_states = [first_state]
-        self.state_locks = [deadlocks.add(first_state, 0)]
+        self.first_generalization = None
+        lock = deadlocks.dl_set.find_by_state(first_state)
+        if lock is None: lock = deadlocks.add(first_state, 0)
+        self.state_locks = [lock]
         self.moves = []
         self.cur_move_i = 0
         self.deadlocks = deadlocks
@@ -33,7 +37,13 @@ class MoveStack:
     def base_state(self): return self.base_states[self.cur_move_i]
     @property
     def cur_lock(self): return self.state_locks[self.cur_move_i]
+    @property
+    def last_action(self): return self.moves[self.cur_move_i-1]
+    @property
+    def next_action(self): return self.moves[self.cur_move_i]
 
+    def is_on_start(self): return self.cur_move_i == 0
+    def is_on_end(self): return self.cur_move_i == len(self.moves)
     def is_solved(self): return self.state.is_solved()
     def is_locked(self):
         return self.cur_lock.stack_index != self.cur_move_i
@@ -42,6 +52,9 @@ class MoveStack:
     def drop_redo(self):
         #print("<drop_redo>", self.cur_move_i, len(self.moves))
         #print(list((i,dl.stack_index) for (i,dl) in enumerate(self.state_locks)))
+        if (self.first_generalization is not None
+            and self.first_generalization > self.cur_move_i):
+            self.first_generalization = None
         dl_to_discard = []
         for i in range(self.cur_move_i+1, len(self.state_locks)):
             #print(i)
@@ -79,6 +92,11 @@ class MoveStack:
             lock = self.deadlocks.add(self.state, self.cur_move_i)
         self.state_locks.append(lock)
 
+        if self.first_generalization == self.cur_move_i:
+            self.first_generalization = None
+        if self.first_generalization is None and not state.sub_full:
+            self.first_generalization = self.cur_move_i
+
     def change_sub_boxes(self, new_sub_boxes):
         if (new_sub_boxes == self.state.sub_boxes).all(): return
         state = self.base_state.generalize(
@@ -113,6 +131,12 @@ class MoveStack:
         return self.set_cur_move_i(self.cur_move_i - 1)
     def redo(self):
         return self.set_cur_move_i(self.cur_move_i + 1)
+    def redo_max(self):
+        return self.set_cur_move_i(len(self.moves))
+    def revert_generalizations(self):
+        if (self.first_generalization is not None
+            and self.first_generalization <= self.cur_move_i):
+            self.cur_move_i = self.first_generalization
 
     # adding to stack without deadlock check
     def _add_move(self, move, next_state, next_state_gener, lock):
@@ -128,6 +152,8 @@ class MoveStack:
         if lock is None:
             lock = self.deadlocks.add(next_state_gener, self.cur_move_i)
         self.state_locks.append(lock)
+        if self.first_generalization is None and not next_state_gener.sub_full:
+            self.first_generalization = self.cur_move_i
 
     def _find_next_lock(self, next_state):
         ori_lock = self.cur_lock
@@ -156,7 +182,7 @@ class MoveStack:
         else: lock = None
 
         if auto_generalize:
-            if lock is None:
+            if lock is None or lock == self.cur_lock:
                 if (next_state.sub_boxes & ~self.state.sup_boxes).any() \
                    and (self.state.sub_boxes &~ next_state.sub_boxes).any():
                     next_state_gener = next_state
@@ -182,53 +208,68 @@ class MoveStack:
             **kwargs,
         )
 
-    def search_step(self, heuristic = None, auto_generalize = True):
+    def find_actions_locks(self):
+        
+        self.drop_redo()
+
+        action_mask = self.state.action_mask(fw_mode = self.fw_mode)
+        actions = positions_true(action_mask)
+        action_locks = list(self.deadlocks.dl_set.find_for_actions(
+            self.state, actions, fw_mode = self.fw_mode
+        ))
+        free_actions = [
+            action for action, dl in zip(actions, action_locks)
+            if dl is None
+        ]
+
+        return actions, action_locks, free_actions
+
+    def choose_action(self, heuristic = None, actions = None):
+        if actions is None:
+            if self.is_locked(): actions = None
+            else: _,_,actions = self.find_actions_locks()
+        if not actions: return None
+
+        if heuristic is not None:
+            logits_arr = heuristic(self.state, self.fw_mode)
+            logits = [logits_arr[action] for action in actions]
+            push_i = np_random_categ(np_softmax(logits))
+        else: push_i = 0
+        return actions[push_i]
+
+    def search_step(self, heuristic = None, min_move = 0, auto_generalize = True):
         while True:
             # undo while deadlocked
             last_move_i = self.cur_move_i
             while self.is_locked():
-                if not self.undo():
-                    print("The level is not solvable")
-                    self.set_cur_move_i(last_move_i)
-                    return
+                if self.cur_move_i == min_move:
+                    print("Not solvable")
+                    return False
+                self.undo()
 
             if self.state.is_solved():
                 print("Not a deadlock, each box is on a storage")
-                return
-
-            self.drop_redo()
+                return False
 
             # find actions not leading to a deadlock
-            action_mask = self.state.action_mask(fw_mode = self.fw_mode)
-            actions = positions_true(action_mask)
-            action_locks = list(self.deadlocks.dl_set.find_for_actions(
-                self.state, actions, fw_mode = self.fw_mode
-            ))
-            free_actions = [
-                action for action, dl in zip(actions, action_locks)
-                if dl is None
-            ]
+            actions, action_locks, free_actions = \
+                self.find_actions_locks()
 
-            # use one
-            if free_actions:
-                if heuristic is not None:
-                    logits_arr = heuristic(self.state, self.fw_mode)
-                    logits = [logits_arr[action] for action in free_actions]
-                    push_i = np_random_categ(np_softmax(logits))
-                else: push_i = 0
+            if free_actions: # apply an action
 
                 self.apply_action(
-                    free_actions[push_i],
+                    self.choose_action(heuristic = heuristic, actions = free_actions),
                     search_for_lock = False,
                     auto_generalize = auto_generalize,
                 )
-                break
+                return True
 
-            self._recheck_deadlocks_on_path(
-                *self.deadlocks.set_descendants(
-                    self.cur_lock, actions, action_locks
+            else: # store a deadlock
+                self._recheck_deadlocks_on_path(
+                    *self.deadlocks.set_descendants(
+                        self.cur_lock, actions, action_locks
+                    )
                 )
-            )
 
     # recheck if positions in undo history are blocked by a new full deadlock
     def _recheck_deadlocks_on_path(self, scc, to_check, index_to_drop_num):

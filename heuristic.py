@@ -3,12 +3,13 @@ from helpers import *
 from directions import *
 from component2d import *
 
-def heurictic_to_storage(state, fw_mode = True):
+def heurictic_to_storage(state, fw_mode = True, storages = None):
+    if storages is None: storages = state.storages
     cur_avail = state.available & ~state.sub_boxes
     jump_map = create_jump_map(cur_avail)
     storages_start = [
         (pos, d)
-        for pos in positions_true(state.storages & ~state.sub_boxes)
+        for pos in positions_true(storages & ~state.sub_boxes)
         for d in directions
         if state.storekeepers[dir_shift(d, pos)]
     ]
@@ -28,9 +29,9 @@ def heurictic_to_storage(state, fw_mode = True):
     )
     for box, (_, fst_dir, _, _) in box_moves.items():
         res[box] = False
-        if state.storages[box]: continue
+        if storages[box]: continue
         for d in directions:
-            if ((fst_dir == d) & state.storages).any():
+            if ((fst_dir == d) & storages).any():
                 if fw_mode: box_d = op_dir(d)
                 else: box_d = d
                 res[box+(box_d,)] = True

@@ -17,12 +17,12 @@ class SokoState:
         # additional features
         "sub_full", #  boolean, all boxes are already represented by sub_boxes
         "storekeeper", # single storekeeper position
-        "goal_storekeeper", # for dual sokoban
+        "storekeeper_goal", # for dual sokoban
         "multi_component", # if True, self.storekeepers can consist of multiple components
     ]
     def __init__(self, available, sub_boxes, sup_boxes, storages,
                  storekeeper, storekeepers = None, sub_full = None,
-                 goal_storekeeper = None, multi_component = None):
+                 storekeeper_goal = None, multi_component = None):
         h,w = available.shape
         self.height = h-2
         self.width = w-2
@@ -32,7 +32,7 @@ class SokoState:
         self.storages = storages
 
         self.storekeeper = storekeeper
-        self.goal_storekeeper = goal_storekeeper
+        self.storekeeper_goal = storekeeper_goal
         if storekeepers is None:
             multi_component = False
             self.storekeepers = get_component(available & ~sub_boxes, [storekeeper])
@@ -55,7 +55,7 @@ class SokoState:
             storekeepers = self.storekeepers,
             storekeeper = self.storekeeper,
             sub_full = self.sub_full,
-            goal_storekeeper = self.goal_storekeeper,
+            storekeeper_goal = self.storekeeper_goal,
             multi_component = self.multi_component,
         )
 
@@ -89,11 +89,17 @@ class SokoState:
             axis = -1,
         )[1:-1,1:-1]
 
-    def is_solved(self):
-        if self.goal_storekeeper is not None and not self.storekeepers[self.goal_storekeeper]:
+    def is_solved(self, other_goal = None):
+        if other_goal is None:
+            storekeeper_goal = self.storekeeper_goal
+            storages = self.storages
+        else:
+            storages, storekeeper_goal = other_goal
+
+        if storekeeper_goal is not None and not self.storekeepers[storekeeper_goal]:
             return False
-        return (self.sub_boxes <= self.storages).all() \
-            and (self.storages <= self.sup_boxes).all()
+        return (self.sub_boxes <= storages).all() \
+            and (storages <= self.sup_boxes).all()
     def score(self):
         return (np.sum(self.sub_boxes & self.storages) + np.sum(self.sup_boxes & self.storages))/2
 
@@ -116,7 +122,7 @@ class SokoState:
         sup_boxes_n[box] = False
         sup_boxes_n[box2] = True
         return SokoState(self.available, sub_boxes_n, sup_boxes_n, self.storages,
-                         storekeeper = storekeeper_n, goal_storekeeper = self.goal_storekeeper)
+                         storekeeper = storekeeper_n, storekeeper_goal = self.storekeeper_goal)
 
     def generalize(self, sub_boxes, sup_boxes, storekeepers = None):
         assert (sub_boxes <= self.sub_boxes).all()
@@ -132,7 +138,7 @@ class SokoState:
         return SokoState(
             self.available, sub_boxes, sup_boxes, self.storages,
             storekeepers = storekeepers, storekeeper = self.storekeeper,
-            goal_storekeeper = self.goal_storekeeper,
+            storekeeper_goal = self.storekeeper_goal,
             multi_component = self.multi_component,
         )
 
@@ -150,7 +156,7 @@ class SokoState:
             self.available, self.sub_boxes, self.sup_boxes, self.storages,
             storekeeper = new_sk, storekeepers = self.storekeepers,
             sub_full = self.sub_full,
-            goal_storekeeper = self.goal_storekeeper,
+            storekeeper_goal = self.storekeeper_goal,
             multi_component = self.multi_component,
         )
 
@@ -165,3 +171,29 @@ def level_to_state(level):
 
     return SokoState(available, boxes, available, storages,
                      level.storekeeper, sub_full = True)
+
+def level_to_dual_state(level):
+    size_bord = level.height+2, level.width+2
+    available = np.zeros(size_bord, dtype = bool)
+    available[1:-1,1:-1] = ~level.walls
+    storages = np.zeros(size_bord, dtype = bool)
+    storages[1:-1,1:-1] = level.boxes
+    boxes = np.zeros(size_bord, dtype = bool)
+    boxes[1:-1,1:-1] = level.storages
+    storekeepers_ini = np.zeros_like(available)
+    for d in directions: storekeepers_ini |= dir_shift_array(d, boxes)
+    storekeepers = get_component(available & ~boxes, positions_true(storekeepers_ini))
+    max_component = max(
+        (comp for pos,comp in component_split(storekeepers)),
+        key = np.sum
+    )
+    storekeeper = positions_true(storekeepers_ini & max_component)[0]
+
+    return SokoState(available, boxes, available, storages,
+                     storekeeper = storekeeper, storekeepers = storekeepers, sub_full = True,
+                     storekeeper_goal = level.storekeeper)
+
+def dual_action(action):
+    y,x,d = action
+    dy,dx = dir_shift(d, (y,x))
+    return dy,dx,op_dir(d)
