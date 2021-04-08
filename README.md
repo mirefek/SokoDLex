@@ -1,8 +1,6 @@
 # SokoDLex
 Sokoban Deadlock Examiner
 
-![Level1](screenshot1.png) ![Level2](screenshot1.png)
-
 ## Description
 
 SokoDLex is a tool for solving Sokoban levels, and examining its deadlocks.
@@ -11,6 +9,8 @@ but allows user to prove that such box configurations indeed form a deadlock
 by examining all possible moves. A deadlock is given by positions of boxes,
 and 'blocked squares' -- positions where it is known that there is no box, these
 can be useful for deadlocks in storage packing.
+
+![Level1](screenshot1.png) ![Level2](screenshot2.png)
 
 ## Dependencies
 + Python3
