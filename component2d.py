@@ -97,58 +97,86 @@ def available_pull_dirs(jump_map, pos, ori_d):
         yield d
         d = turn_left(jumps[d])
         if d == ori_d: return
+def available_push_dirs(jump_map, pos, ori_d):
+    for d in available_pull_dirs(jump_map, pos, op_dir(ori_d)):
+        yield op_dir(d)
 
-def box_positions(jump_map, available, start_pos, fw_mode):
+def find_box_jumps(jump_map, available, start_pos, fw_mode):
+
     h,w = available.shape
-    all_dirs = np.zeros([h,w,4], dtype = bool)
-    fst_dir = np.full([h,w], -1)
-    last_dir = np.full([h,w], -1)
-    dists = np.full([h,w], -1)
-    q = deque([(0, pos, d, d) for (pos,d) in start_pos])
+    fst_move = np.full([h,w,4], -1)
+    last_move = np.full([h,w,4], -1)
+    q = deque([(pos, d, d, -1) for (pos,d) in start_pos])
+
+    if fw_mode: available_dirs = available_push_dirs
+    else: available_dirs = available_pull_dirs
     #for y in range(h):
     #    for x in range(w):
     #        if not available[y,x]: assert (jump_map[y,x] == -1).all(), (y,x)
     #        else: assert sorted(jump_map[y,x]) == directions, (y,x)
     #print("All OK")
     while q:
-        dist,pos,d,fd = q.popleft()
+        pos,d,fd,ld = q.popleft()
         y,x = pos
-        if all_dirs[y,x,d]: continue
-        all_dirs[y,x,d] = True
-        if last_dir[pos] < 0:
-            fst_dir[pos] = fd
-            last_dir[pos] = d
-            dists[pos] = dist
+        if fst_move[y,x,d] >= 0: continue
+        fst_move[y,x,d] = fd
+        last_move[y,x,d] = ld
+
+        pos_n = dir_shift(d, pos)
         if fw_mode:
-            pos_n = dir_shift(op_dir(d), pos)
             if not available[pos_n]: continue
         else:
-            pos_n = dir_shift(d, pos)
             if not available[dir_shift(d, pos_n)]: continue
+
         q.extend(
-            (dist+1,pos_n, d_n, fd)
-            for d_n in available_pull_dirs(jump_map, pos_n, d)
+            (pos_n, d_n, fd, d)
+            for d_n in available_dirs(jump_map, pos_n, d)
         )
 
-    return all_dirs, fst_dir, last_dir, dists
+    if np.sum(last_move >= 0):
+        return fst_move, last_move
+    else:
+        return None
 
-def available_box_moves(free_sq, boxes, component, fw_mode, jump_map = None):
+def find_box_jumps_from_sk(available, boxes, box, storekeepers, fw_mode):
+    clear = available & ~boxes
+    clear[box] = True
+    jump_map = create_jump_map(clear)
+    start_pos = []
+    for d in directions:
+        if fw_mode: sk = dir_shift(op_dir(d), box)
+        else: sk = dir_shift(d, box)
+        if storekeepers[sk]: start_pos.append((box, d))
 
-    if jump_map is None: jump_map = create_jump_map(free_sq)
+    return find_box_jumps(jump_map, clear, start_pos, fw_mode)
+
+def find_all_box_jumps(clear, boxes, storekeepers, fw_mode, jump_map = None):
+
+    if jump_map is None: jump_map = create_jump_map(clear)
     res = dict()
-    for pos in positions_true(boxes):
-        start_pos = [
-            (pos, d) for d in directions
-            if component[dir_shift(d, pos)]
-        ]
-        if not start_pos: continue
-        #print("Calculate", y, x)
-        jump_map_add_avail(pos, jump_map, free_sq)
-        all_last_dirs, fst_dir, last_dir, dists = box_positions(
-            jump_map, free_sq, start_pos, fw_mode
-        )
-        if np.sum(last_dir >= 0) > 1:
-            res[pos] = all_last_dirs, fst_dir, last_dir, dists
-        jump_map_remove_avail(pos, jump_map, free_sq)
+    for box in positions_true(boxes):
+        start_pos = []
+        for d in directions:
+            if fw_mode: sk = dir_shift(op_dir(d), box)
+            else: sk = dir_shift(d, box)
+            if storekeepers[sk]: start_pos.append((box, d))
 
+        if not start_pos: return None
+        jump_map_add_avail(box, jump_map, clear)
+        box_jumps = find_box_jumps(
+            jump_map, clear, start_pos, fw_mode
+        )
+        if box_jumps is not None: res[box] = box_jumps
+        jump_map_remove_avail(box, jump_map, clear)
+
+    return res
+
+def box_jump_to_pushes(dest, last_d, last_move):
+    res = []
+    while True:
+        last_d = last_move[dest+(last_d,)]
+        if last_d < 0: break
+        dest = dir_shift(op_dir(last_d), dest)
+        res.append((dest, last_d))
+    res.reverse()
     return res

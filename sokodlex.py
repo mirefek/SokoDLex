@@ -14,6 +14,7 @@ from data_loader import load_xsb_levels
 from soko_state import *
 from directions import *
 from helpers import *
+from component2d import *
 from heuristic import heurictic_to_storage
 
 class SokoGUI(Gtk.Window):
@@ -23,6 +24,7 @@ class SokoGUI(Gtk.Window):
         super(SokoGUI, self).__init__()
 
         self.dragged = None
+        self.active_box = None
         self.painting = None
         self.timer_id = None
 
@@ -42,8 +44,7 @@ class SokoGUI(Gtk.Window):
                               Gdk.EventMask.BUTTON_RELEASE_MASK |
                               Gdk.EventMask.KEY_PRESS_MASK |
                               #Gdk.EventMask.SCROLL_MASK |
-                              Gdk.EventMask.BUTTON1_MOTION_MASK |
-                              Gdk.EventMask.BUTTON3_MOTION_MASK )
+                              Gdk.EventMask.POINTER_MOTION_MASK )
         self.add(self.darea)
 
         self.darea.connect("button-press-event", self.on_button_press)
@@ -51,7 +52,7 @@ class SokoGUI(Gtk.Window):
         self.darea.connect("motion-notify-event", self.on_motion)
         self.connect("key-press-event", self.on_key_press)
 
-        self.set_title("Sokoban")
+        self.set_title("SokoDLex")
         self.resize(*win_size)
         self.screen_border = 10
         self.scale = 1
@@ -74,6 +75,69 @@ class SokoGUI(Gtk.Window):
         self.move_stacks = [
             dual_move_stack, move_stack
         ]
+        self.update_box_jumps()
+
+    def update_box_jumps(self):
+        self.box_jumps = dict()
+        self.box_jump_health = dict()
+
+    def get_box_jumps(self, src):
+        if src in self.box_jumps: return self.box_jumps[src]
+        src1 = src[0]+1, src[1]+1
+        if not self.state.sub_boxes[src1]:
+            box_jumps = None
+        else:
+            state = self.state
+            box_jumps = find_box_jumps_from_sk(
+                state.available, state.sub_boxes, src1, state.storekeepers, self.fw_mode
+            )
+            if box_jumps is not None:
+                box_jumps = box_jumps[1][1:-1,1:-1]
+
+        self.box_jumps[src] = box_jumps
+        return box_jumps
+
+    def get_box_jump_health(self, src):
+        res = self.box_jump_health.get(src, None)
+        if res is not None: return res
+        last_move = self.get_box_jumps(src)
+        if last_move is None: return None
+        
+        positions = positions_true(last_move == range(4))
+        if self.fw_mode: dir_f = op_dir
+        else: dir_f = lambda d: d
+        box_moves = [
+            ((src[0]+1,src[1]+1), (y+1,x+1), dir_f(d))
+            for (y,x,d) in positions
+        ]
+        locks = self.move_stack.deadlocks.dl_set.find_for_box_moves(
+            self.state, box_moves)
+
+        res = np.zeros_like(last_move)
+        for pos, lock in zip(positions, locks):
+            if lock is None: res[pos] = 3
+            elif lock.stack_index >= self.move_stack.cur_move_i:
+                res[pos] = 3
+            elif lock.stack_index >= 0: res[pos] = 2
+            else: res[pos] = 1
+
+        self.box_jump_health[src] = res
+        return res
+
+    def cancel_box_jumps(self):
+        self.box_jumps = dict()
+        self.box_jump_health = dict()
+    def apply_box_jump(self, src, dest):
+        if src == dest: return
+        pushes_candidates = []
+        box_jumps = self.get_box_jumps(src)
+        for d, ld in enumerate(box_jumps[dest]):
+            if d == ld:
+                pushes_candidates.append(box_jump_to_pushes(dest, d, box_jumps))
+        pushes = min(pushes_candidates, key = len)
+        for (y,x), d in pushes:
+            self.move_stack.apply_action((y,x,d))
+        self.update_box_jumps()
 
     @property
     def move_stack(self): return self.move_stacks[self.fw_mode]
@@ -156,17 +220,21 @@ class SokoGUI(Gtk.Window):
         elif keyval_name == 'space':
             self.move_stack.revert_generalizations()
             self.fw_mode = not self.fw_mode
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 's':
             self.search_step()
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'S':
+            self.cancel_box_jumps()
             if self.timer_id is None:
                 self.cancel()
                 self.timer_start(self.autosearch, self.move_stack.cur_move_i)
             else:
                 self.cancel()
         elif keyval_name == 'p':
+            self.cancel_box_jumps()
             if self.timer_id is None:
                 self.cancel()
                 self.timer_start(self.autoplay, None)
@@ -189,26 +257,29 @@ class SokoGUI(Gtk.Window):
             if shift_pressed:
                 self.move_stack.redo_max()
             else: self.move_stack.reset()
-            self.cancel()
-        elif keyval_name == 'R':
-            self.move_stack.reset()
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name in ('BackSpace', 'z'):
             self.move_stack.undo()
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name in ('equal', 'Z'):
             self.move_stack.redo()
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'a':
             self.move_stack.change_sub_boxes(self.base_state.sub_boxes)
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'A':
             self.move_stack.change_sup_boxes(self.state.available)
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'x':
             self.move_stack.change_sub_boxes(
                 self.base_state.sub_boxes & ~self.state.sub_boxes
             )
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'X':
             if self.base_state.sub_full: sup_boxes = self.base_state.sub_boxes
@@ -216,6 +287,7 @@ class SokoGUI(Gtk.Window):
             self.move_stack.change_sup_boxes(
                 (sup_boxes | ~self.state.sup_boxes) & self.state.available
             )
+            self.update_box_jumps()
             self.cancel()
         elif keyval_name == 'Escape':
             Gtk.main_quit()
@@ -227,13 +299,12 @@ class SokoGUI(Gtk.Window):
         coor = np.array([e.x, e.y])
         coor = (coor - self.size/2) / self.scale
         coor += np.array([self.state.width, self.state.height])/2
-        x,y = coor
-        return y,x
+        return coor[::-1]
     def mouse_to_square(self, e, base1_index = True):
         coor = self.to_local_coor(e)
         coor = np.floor(coor).astype(int)
         y,x = coor
-        if not (0 < x <= self.state.width and 0 < y <= self.state.height):
+        if not (0 <= x < self.state.width and 0 <= y < self.state.height):
             return None
 
         if base1_index: return y+1,x+1
@@ -241,23 +312,30 @@ class SokoGUI(Gtk.Window):
 
     def on_button_press(self, w, e):
         if e.type != Gdk.EventType.BUTTON_PRESS: return # ignore double clicks etc.
-        self.cancel(redraw = False)
 
         if e.button == 1:
+            if self.active_box is not None:
+                self.apply_box_jump(*self.active_box)
+                self.active_box = None
+                self.darea.queue_draw()
+                return
+            if self.cancel(redraw = False): return
             pos = self.mouse_to_square(e, base1_index = False)
             if pos is None: return
             y,x = pos
             action_mask = self.state.action_mask(fw_mode = self.fw_mode)[pos]
             if action_mask.any():
-                self.dragged = pos, action_mask
+                self.dragged = pos, action_mask, 'click'
                 self.darea.queue_draw()
         elif e.button == 2:
+            self.cancel(redraw = False)
             pos = self.mouse_to_square(e, base1_index = True)
             if pos is None or not self.state.storekeepers[pos]: return
             self.move_stack.set_storekeeper(pos)
             self.darea.queue_draw()
 
         elif e.button == 3:
+            if self.cancel(redraw = False): return
             pos = self.mouse_to_square(e)
             if pos is None: return
             if self.base_state.sub_boxes[pos]:
@@ -278,6 +356,11 @@ class SokoGUI(Gtk.Window):
 
     def on_button_release(self,w,e):
         if self.dragged is not None:
+            box, _, drag_state = self.dragged
+            if drag_state == 'click' and self.get_box_jumps(box) is not None:
+                self.active_box = box, box
+            elif drag_state == 'moved':
+                self.update_box_jumps()
             self.darea.queue_draw()
             self.dragged = None
         if self.painting is not None:
@@ -308,37 +391,73 @@ class SokoGUI(Gtk.Window):
             
         self.darea.queue_draw()
 
+    def drag_box(self, coor):
+        box, action_mask, drag_state = self.dragged
+
+        if box == tuple(np.floor(coor).astype(int)): return
+        y,x = coor - (np.array(box)+0.5)
+        if abs(y) > abs(x):
+            if y > 0: d = DOWN
+            if y < 0: d = UP
+        else:
+            if x > 0: d = RIGHT
+            if x < 0: d = LEFT
+        if not action_mask[d]:
+            if drag_state == 'click':
+                self.dragged = box, action_mask, 'start'
+            return
+
+        self.move_stack.apply_action(box+(d,))
+        #self.update_box_jumps()
+        box2 = dir_shift(d, box)
+        action_mask = self.state.action_mask(fw_mode = self.fw_mode)
+        cur_action_mask = action_mask[box2]
+        if cur_action_mask.any():
+            self.dragged = box2, cur_action_mask, 'moved'
+            next_positions = np.full(action_mask.shape, -1)
+            for (d,) in positions_true(cur_action_mask):
+                y,x = dir_shift(d, box2)
+                next_positions[y,x,d] = d
+            self.box_jumps = { box2 : next_positions }
+            self.box_jump_health = dict()
+        else:
+            self.dragged = None
+            self.update_box_jumps()
+        self.darea.queue_draw()
+
+    def update_active_box(self, dest):
+        if dest is None: return
+        src, ori_dest = self.active_box
+        if not (self.get_box_jumps(src)[dest] >= 0).any():
+            dest = src
+        self.active_box = src, dest
+        if dest != ori_dest: self.darea.queue_draw()
+
     def on_motion(self,w,e):
         if self.painting is not None:
-            pos = self.apply_painting(self.mouse_to_square(e))
-        if self.dragged is not None:
-            box, action_mask = self.dragged
-
-            coor = self.to_local_coor(e)
-            if box == tuple(np.floor(coor).astype(int)): return
-            y,x = coor - (np.array(box)+0.5)
-            if abs(y) > abs(x):
-                if y > 0: d = DOWN
-                if y < 0: d = UP
-            else:
-                if x > 0: d = RIGHT
-                if x < 0: d = LEFT
-            if not action_mask[d]: return
-
-            self.move_stack.apply_action(box+(d,))
-            box2 = dir_shift(d, box)
-            self.dragged = box2, self.state.action_mask(fw_mode = self.fw_mode)[box2]
-            self.darea.queue_draw()
+            self.apply_painting(self.mouse_to_square(e))
+        elif self.dragged is not None:
+            self.drag_box(self.to_local_coor(e))
+        elif self.active_box is not None:
+            self.update_active_box(self.mouse_to_square(e, base1_index = False))
 
     def cancel(self, redraw = True):
-        redraw = redraw or self.dragged
+        redraw = (
+            redraw
+            or self.dragged is not None
+            or self.active_box is not None
+        )
         canceled = (
             self.timer_id is not None
             or self.dragged is not None
             or self.painting is not None
+            or self.active_box is not None
         )
         self.timer_stop()
+        if self.dragged is not None and dragged[-1] == 'moved':
+            self.update_box_jumps()
         self.dragged = None
+        self.active_box = None
         self.painting = None
         if redraw: self.darea.queue_draw()
         return canceled
@@ -347,6 +466,7 @@ class SokoGUI(Gtk.Window):
         if self.timer_id:
             GLib.source_remove(self.timer_id)
             self.timer_id = None
+            self.update_box_jumps()
     def timer_start(self, f, arg):
         self.timer_stop()
         self.timer_id = GLib.timeout_add(30, f, arg)
@@ -354,13 +474,17 @@ class SokoGUI(Gtk.Window):
     def autoplay(self, arg):
         repeat = self.auto_move()
         self.darea.queue_draw()
-        if not repeat: self.timer_id = None
+        if not repeat:
+            self.update_box_jumps()
+            self.timer_id = None
         return repeat
 
     def autosearch(self, min_move):
         repeat = self.search_step(min_move = min_move)
         self.darea.queue_draw()
-        if not repeat: self.timer_id = None
+        if not repeat:
+            self.update_box_jumps()
+            self.timer_id = None
         return repeat # so that it is called again
 
     # drawing
@@ -409,10 +533,15 @@ class SokoGUI(Gtk.Window):
         cr.rectangle(-0.25, -0.25, 0.5, 0.5)
         cr.set_source_rgb(0.5, 0.5, 0.5)
         cr.fill()
-    def draw_ghost_box(self, cr):
-        cr.rectangle(-0.25, -0.25, 0.5, 0.5)
-        cr.set_source_rgb(1, 1, 0.5)
-        cr.fill()
+    def draw_ghost_box(self, health):
+        if health >= 3: color = 0.9, 1, 0.5
+        elif health >= 2: color = 1, 0.8, 0.5
+        else: color = 1, 0.5, 0.5
+        def draw_ghost_box(cr):
+            cr.rectangle(-0.25, -0.25, 0.5, 0.5)
+            cr.set_source_rgb(*color)
+            cr.fill()
+        return draw_ghost_box
     def draw_active_box(self, cr):
         cr.rectangle(-0.25, -0.25, 0.5, 0.5)
         cr.set_source_rgb(1, 0.5, 0)
@@ -480,9 +609,9 @@ class SokoGUI(Gtk.Window):
         cr.set_source_rgb(1, 1, 1)
         cr.fill()
 
-        # drawing the level
         self.draw_state(cr)
 
+    # drawing the level
     def draw_state(self, cr):
         state = self.state
         base_state = self.base_state
@@ -505,16 +634,28 @@ class SokoGUI(Gtk.Window):
         self.draw_array(cr, self.draw_blocked, blocked)
         self.draw_array(cr, self.draw_box, sub_boxes)
         self.draw_array(cr, self.draw_disabled_box, disabled_boxes)
-        self.draw_array(cr, self.draw_ghost_storekeeper, storekeepers)
+        if not self.active_box:
+            self.draw_array(cr, self.draw_ghost_storekeeper, storekeepers)
         self.draw_to_yx(cr, self.draw_storekeeper, state.storekeeper,
                         base1_index = True)
         self.draw_array(cr, self.draw_wall, ~available)
         if self.dragged is not None:
-            box, action_mask = self.dragged
+            box, action_mask, _ = self.dragged
             self.draw_to_yx(cr, self.draw_active_box, box)
             for d in directions:
                 if action_mask[d]:
-                    self.draw_to_yx(cr, self.draw_ghost_box, dir_shift(d, box))
+                    box2 = dir_shift(d, box)
+                    if self.get_box_jump_health(box) is None: h = 0
+                    else: h = np.max(self.get_box_jump_health(box)[box2])
+                    self.draw_to_yx(cr, self.draw_ghost_box(h), box2)
+        elif self.active_box is not None:
+            src, dest = self.active_box
+            jump_health = self.get_box_jump_health(src)
+            jump_health = np.max(jump_health, axis = -1)
+            jump_health[src] = 3
+            for h in (1,2,3):
+                self.draw_array(cr, self.draw_ghost_box(h), jump_health == h)
+            self.draw_to_yx(cr, self.draw_active_box, dest)
         self.draw_array(cr, self.draw_storage, storages & ~sub_boxes)
         self.draw_array(cr, self.draw_happy_storage, storages & sub_boxes)
         if sk_goal is not None:

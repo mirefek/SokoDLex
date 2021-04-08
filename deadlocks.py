@@ -242,11 +242,26 @@ class DeadlockSet:
             condition = condition,
         )
 
-    def find_for_actions(self, state, actions, fw_mode = True):
+    def find_for_box_moves(self, state, box_moves):
 
         if state.multi_component:
-            for action in actions:
-                state2 = state.move(*action, fw_mode = fw_mode)
+            for box_src, box_dest, sk_dir in box_moves:
+
+                sub_boxes = np.array(state.sub_boxes)
+                sup_boxes = np.array(state.sup_boxes)
+                sub_boxes[box_src] = False
+                sup_boxes[box_src] = False
+                sub_boxes[box_dest] = True
+                sup_boxes[box_dest] = True
+                state2 = SokoState(
+                    available = state.available,
+                    sub_boxes = sub_boxes,
+                    sup_boxes = sup_boxes,
+                    storages = state.storages,
+                    sub_full = state.sub_full,
+                    storekeeper = dir_shift(sk_dir, box_dest),
+                    storekeeper_goal = self.storekeeper_goal,
+                )
                 yield find_by_state(state2)
 
         else:
@@ -254,12 +269,19 @@ class DeadlockSet:
             if state.sub_full: ori_nboxes = None
             else: ori_nboxes = positions_true(state.available & ~state.sup_boxes)
 
-            for y,x,d in actions:
-                box = (y+1,x+1)
-                box2 = dir_shift(d, box)
-                if fw_mode: storekeeper = box
-                else: storekeeper = dir_shift(d, box2)
-                yield self.find_one([box2], [box], ori_boxes, ori_nboxes, storekeeper)
+            for box_src, box_dest, sk_dir in box_moves:
+                storekeeper = dir_shift(sk_dir, box_dest)
+                yield self.find_one([box_dest], [box_src], ori_boxes, ori_nboxes, storekeeper)
+
+    def find_for_actions(self, state, actions, fw_mode = True):
+        box_moves = []
+        for y,x,d in actions:
+            box_src = (y+1,x+1)
+            box_dest = dir_shift(d, box_src)
+            if fw_mode: sk_dir = op_dir(d)
+            else: sk_dir = d
+            box_moves.append((box_src, box_dest, sk_dir))
+        return self.find_for_box_moves(state, box_moves)
 
 class DeadlockStack:
     def __init__(self, dl_set = None, fname = None, sample_state = None):
