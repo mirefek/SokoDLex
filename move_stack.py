@@ -42,6 +42,9 @@ class MoveStack:
     @property
     def next_action(self): return self.moves[self.cur_move_i]
 
+    def get_past_actions(self): return self.moves[:self.cur_move_i]
+    def get_past_states(self): return self.base_states[:self.cur_move_i+1]
+
     def is_on_start(self): return self.cur_move_i == 0
     def is_on_end(self): return self.cur_move_i == len(self.moves)
     def is_solved(self): return self.state.is_solved()

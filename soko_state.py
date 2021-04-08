@@ -2,7 +2,7 @@ import numpy as np
 
 from directions import *
 from helpers import positions_true
-from component2d import get_component, component_split
+from component2d import get_component, component_split, find_path
 
 class SokoState:
     __slots__ = [
@@ -125,14 +125,15 @@ class SokoState:
                          storekeeper = storekeeper_n, storekeeper_goal = self.storekeeper_goal)
 
     def action_to_basic_moves(self, action, fw_mode = True):
+        assert self.action_mask(fw_mode = fw_mode)[action]
         y,x,d = action
         box = y+1,x+1
         if fw_mode: sk_dest = dir_shift(op_dir(d), box)
         else: sk_dest = dir_shift(d, box)
-        moves = find_path(self.available & ~self.boxes, self.storekeeper, sk_dest)
+        moves = find_path(self.available & ~self.sub_boxes, self.storekeeper, sk_dest)
         if moves is None: moves = []
-        if fw_mode: moves.append(d)
-        else: moves.append(op_dir(d))
+        moves.append(d)
+        return moves
 
     def generalize(self, sub_boxes, sup_boxes, storekeepers = None):
         assert (sub_boxes <= self.sub_boxes).all()

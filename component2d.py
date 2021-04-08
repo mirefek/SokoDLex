@@ -25,9 +25,9 @@ def component_split(component):
         yield pos, subcomp
         component = component & ~subcomp
 
-def find_path(avaiable, start_pos, end_pos):
+def find_path(available, start_pos, end_pos):
     q = deque([(start_pos, 4)])
-    last_move = np.zeros(available.shape, -1)
+    last_move = np.full(available.shape, -1)
     used = np.zeros
     while q:
         pos,d = q.popleft()

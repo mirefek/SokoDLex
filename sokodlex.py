@@ -32,7 +32,7 @@ class SokoGUI(Gtk.Window):
         self.levelset_basename, _ = os.path.splitext(os.path.basename(levelset_fname))
         self.levels = load_xsb_levels(levelset_fname)
         print("{} levels loaded".format(len(self.levels)))
-        self.level_i = np.clip(level_i, 0, len(self.levels)-1)
+        self.level_i = np.clip(level_i, 1, len(self.levels))
         self.var_dir = var_dir
 
         self.fw_mode = True
@@ -54,15 +54,15 @@ class SokoGUI(Gtk.Window):
 
         self.set_title("SokoDLex")
         self.resize(*win_size)
-        self.screen_border = 10
+        self.screen_border = [10, 30, 10, 10]
         self.scale = 1
-        self.size = np.array(win_size)
+        self.grid_center = np.array([0, 0])
         self.set_position(Gtk.WindowPosition.CENTER)
         self.connect("delete-event", Gtk.main_quit)
         self.show_all()
 
     def make_move_stacks(self):
-        
+
         print("Level {}".format(self.level_i))
         state = level_to_state(self.levels[self.level_i-1])
         dual_state = level_to_dual_state(self.levels[self.level_i-1])
@@ -80,6 +80,7 @@ class SokoGUI(Gtk.Window):
         ]
         self.was_solved = False
         self.update_box_jumps()
+        self.level_var_dir = level_var_dir
 
     def update_box_jumps(self):
         self.box_jumps = dict()
@@ -168,9 +169,46 @@ class SokoGUI(Gtk.Window):
         is_solved = self.state.is_solved(
             other_goal = (self.dual_state.sub_boxes, self.storekeeper_goal)
         )
-        if not self.move_stack.was_generalized and not self.was_solved:
-            print("TODO: saving solution")
-            
+        if is_solved and not self.move_stack.was_generalized() and not self.was_solved:
+            bw_move_stack, fw_move_stack = self.move_stacks
+            fw_actions = fw_move_stack.get_past_actions()
+            bw_actions = bw_move_stack.get_past_actions()
+            fw_states = fw_move_stack.get_past_states()
+            bw_states = bw_move_stack.get_past_states()
+            fw_moves = []
+            for state, action in zip(fw_states, fw_actions):
+                fw_moves.extend(state.action_to_basic_moves(action, fw_mode = True))
+            if bw_actions:
+                bw_moves = [bw_actions[0][-1]]
+                for state, action in zip(bw_states[1:], bw_actions[1:]):
+                    bw_moves.extend(state.action_to_basic_moves(action, fw_mode = False))
+                fw_state = fw_states[-1]
+                bw_state = bw_states[-1]
+                fw_moves.extend(
+                    find_path(
+                        fw_state.available & ~fw_state.sub_boxes,
+                        fw_state.storekeeper,
+                        bw_state.storekeeper,
+                    )
+                )
+                bw_actions.reverse()
+                bw_moves.reverse()
+                fw_actions.extend(dual_action(a) for a in bw_actions)
+                fw_moves.extend(op_dir(d) for d in bw_moves)
+
+            sol_fname = "solution_{}_{}".format(len(fw_moves), len(fw_actions))
+            move_fname = os.path.join(self.level_var_dir, sol_fname+".mov")
+            action_fname = os.path.join(self.level_var_dir, sol_fname+".act")
+            with open(move_fname, 'w') as f:
+                f.write(''.join(
+                    dir_to_c(d) for d in fw_moves
+                )+'\n')
+            with open(action_fname, 'w') as f:
+                for y,x,d in fw_actions:
+                    print(y, x, dir_to_c(d), file = f)
+            print("Saved solution: {} moves, {} pushes".format(
+                len(fw_moves), len(fw_actions)))
+
         return is_solved
     def search_step(self, min_move = None):
         if self.is_solved(): return False
@@ -301,13 +339,12 @@ class SokoGUI(Gtk.Window):
             Gtk.main_quit()
 
     def to_local_coor(self, e):
-        screen_border = self.screen_border
         screen_width = self.darea.get_allocated_width()
         screen_height = self.darea.get_allocated_height()
-        coor = np.array([e.x, e.y])
-        coor = (coor - self.size/2) / self.scale
-        coor += np.array([self.state.width, self.state.height])/2
-        return coor[::-1]
+        coor = np.array([e.y, e.x])
+        coor = (coor - self.grid_center[::-1]) / self.scale
+        coor += np.array([self.state.height, self.state.width])/2
+        return coor
     def mouse_to_square(self, e, base1_index = True):
         coor = self.to_local_coor(e)
         coor = np.floor(coor).astype(int)
@@ -590,9 +627,15 @@ class SokoGUI(Gtk.Window):
         screen_border = self.screen_border
         screen_width = self.darea.get_allocated_width()
         screen_height = self.darea.get_allocated_height()
-        self.size = np.array([screen_width, screen_height])
+        self.grid_center = np.array([screen_width, screen_height], dtype = float)
+        self.grid_center[0] += screen_border[LEFT]
+        self.grid_center[0] -= screen_border[RIGHT]
+        self.grid_center[1] += screen_border[UP]
+        self.grid_center[1] -= screen_border[DOWN]
+        self.grid_center /= 2
 
         cr.rectangle(0,0, screen_width, screen_height)
+        move_counter_color = (1,1,1)
         if self.is_solved():
             cr.set_source_rgb(0.0, 0.5, 0.0)
         elif self.move_stack.is_locked():
@@ -600,16 +643,22 @@ class SokoGUI(Gtk.Window):
                 cr.set_source_rgb(0.5, 0.0, 0.0)
             else:
                 cr.set_source_rgb(0.3, 0.3, 0.3)
-        else: cr.set_source_rgb(0.5, 0.5, 0.5)
+        else:
+            move_counter_color = (0,0,0)
+            cr.set_source_rgb(0.5, 0.5, 0.5)
         cr.fill()
 
         cr.save()
-        
+
+        screen_border_v = screen_border[UP] + screen_border[DOWN]
+        screen_border_h = screen_border[LEFT] + screen_border[RIGHT]
         self.scale = min(
-            (screen_width - 2*screen_border) / self.state.width,
-            (screen_height - 2*screen_border) / self.state.height,
+            (screen_width - screen_border_h) / self.state.width,
+            (screen_height - screen_border_v) / self.state.height,
         )
-        cr.translate(*(self.size/2))
+
+        cr.save()
+        cr.translate(*self.grid_center)
         cr.scale(self.scale, self.scale)
         cr.translate(-self.state.width/2, -self.state.height/2)
 
@@ -618,6 +667,16 @@ class SokoGUI(Gtk.Window):
         cr.fill()
 
         self.draw_state(cr)
+        cr.restore()
+
+        cr.set_font_size(20)
+        cr.set_source_rgb(*move_counter_color)
+        cr.move_to(10, screen_height-7)
+        bw_moves, fw_moves = [stack.cur_move_i for stack in self.move_stacks]
+        if bw_moves:
+            text = "{} + {}".format(fw_moves, bw_moves)
+        else: text = str(fw_moves)
+        cr.show_text(text)
 
     # drawing the level
     def draw_state(self, cr):

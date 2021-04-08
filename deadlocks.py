@@ -260,9 +260,9 @@ class DeadlockSet:
                     storages = state.storages,
                     sub_full = state.sub_full,
                     storekeeper = dir_shift(sk_dir, box_dest),
-                    storekeeper_goal = self.storekeeper_goal,
+                    storekeeper_goal = state.storekeeper_goal,
                 )
-                yield find_by_state(state2)
+                yield self.find_by_state(state2)
 
         else:
             ori_boxes = positions_true(state.sub_boxes)
