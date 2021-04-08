@@ -124,6 +124,16 @@ class SokoState:
         return SokoState(self.available, sub_boxes_n, sup_boxes_n, self.storages,
                          storekeeper = storekeeper_n, storekeeper_goal = self.storekeeper_goal)
 
+    def action_to_basic_moves(self, action, fw_mode = True):
+        y,x,d = action
+        box = y+1,x+1
+        if fw_mode: sk_dest = dir_shift(op_dir(d), box)
+        else: sk_dest = dir_shift(d, box)
+        moves = find_path(self.available & ~self.boxes, self.storekeeper, sk_dest)
+        if moves is None: moves = []
+        if fw_mode: moves.append(d)
+        else: moves.append(op_dir(d))
+
     def generalize(self, sub_boxes, sup_boxes, storekeepers = None):
         assert (sub_boxes <= self.sub_boxes).all()
         if not self.sub_full: assert (self.sup_boxes <= sup_boxes).all()

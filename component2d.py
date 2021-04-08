@@ -4,19 +4,6 @@ from collections import defaultdict, deque
 from directions import *
 from helpers import *
 
-def get_component_dist(available, start_positions):
-    q = deque((pos, 0) for pos in start_positions)
-    res = np.full(available.shape, -1, dtype = int)
-    while q:
-        pos,dist = q.popleft()
-        if res[pos] >= 0 or not available[pos]: continue
-        res[pos] = dist
-        q.extend(
-            (dir_shift(d, pos), dist+1)
-            for d in directions
-        )
-    return res
-
 def get_component(available, start_positions):
     q = deque(start_positions)
     res = np.zeros(available.shape, dtype = bool)
@@ -37,6 +24,42 @@ def component_split(component):
         subcomp = get_component(component, [pos])
         yield pos, subcomp
         component = component & ~subcomp
+
+def find_path(avaiable, start_pos, end_pos):
+    q = deque([(start_pos, 4)])
+    last_move = np.zeros(available.shape, -1)
+    used = np.zeros
+    while q:
+        pos,d = q.popleft()
+        if last_move[pos] >= 0 or not available[pos]: continue
+        last_move[pos] = d
+        if pos == end_pos: break
+        q.extend(
+            (dir_shift(d, pos), d)
+            for d in directions
+        )
+    if last_move[end_pos] < 0: return None
+    res = []
+    while end_pos != start_pos:
+        d = last_move[end_pos]
+        res.append(d)
+        end_pos = dir_shift(op_dir(d), end_pos)
+    res.reverse()
+    return res
+
+# currently unused
+def get_component_dist(available, start_positions):
+    q = deque((pos, 0) for pos in start_positions)
+    res = np.full(available.shape, -1, dtype = int)
+    while q:
+        pos,dist = q.popleft()
+        if res[pos] >= 0 or not available[pos]: continue
+        res[pos] = dist
+        q.extend(
+            (dir_shift(d, pos), dist+1)
+            for d in directions
+        )
+    return res
 
 def follow_l_wall(available, start_pos, start_d):
     pos = start_pos
@@ -161,7 +184,7 @@ def find_all_box_jumps(clear, boxes, storekeepers, fw_mode, jump_map = None):
             else: sk = dir_shift(d, box)
             if storekeepers[sk]: start_pos.append((box, d))
 
-        if not start_pos: return None
+        if not start_pos: continue
         jump_map_add_avail(box, jump_map, clear)
         box_jumps = find_box_jumps(
             jump_map, clear, start_pos, fw_mode

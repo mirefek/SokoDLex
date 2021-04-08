@@ -133,9 +133,13 @@ class MoveStack:
         return self.set_cur_move_i(self.cur_move_i + 1)
     def redo_max(self):
         return self.set_cur_move_i(len(self.moves))
+    def was_generalized(self):
+        return (
+            self.first_generalization is not None
+            and self.first_generalization <= self.cur_move_i
+        )
     def revert_generalizations(self):
-        if (self.first_generalization is not None
-            and self.first_generalization <= self.cur_move_i):
+        if self.was_generalized():
             self.cur_move_i = self.first_generalization
 
     # adding to stack without deadlock check

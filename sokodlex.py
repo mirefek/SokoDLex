@@ -62,6 +62,7 @@ class SokoGUI(Gtk.Window):
         self.show_all()
 
     def make_move_stacks(self):
+        
         print("Level {}".format(self.level_i))
         state = level_to_state(self.levels[self.level_i-1])
         dual_state = level_to_dual_state(self.levels[self.level_i-1])
@@ -70,11 +71,14 @@ class SokoGUI(Gtk.Window):
         os.makedirs(level_var_dir, exist_ok = True)
         dl_fname = os.path.join(level_var_dir, 'deadlocks')
         dual_dl_fname = os.path.join(level_var_dir, 'dual_deadlocks')
+        print('Preparing forward stack')
         move_stack = MoveStack(state, dl_fname = dl_fname)
+        print('Preparing backward stack')
         dual_move_stack = MoveStack(dual_state, dl_fname = dual_dl_fname, fw_mode = False)
         self.move_stacks = [
             dual_move_stack, move_stack
         ]
+        self.was_solved = False
         self.update_box_jumps()
 
     def update_box_jumps(self):
@@ -161,9 +165,13 @@ class SokoGUI(Gtk.Window):
         storages = self.dual_state.sub_boxes
         return heurictic_to_storage(state, fw_mode, storages = storages)
     def is_solved(self):
-        return self.state.is_solved(
+        is_solved = self.state.is_solved(
             other_goal = (self.dual_state.sub_boxes, self.storekeeper_goal)
         )
+        if not self.move_stack.was_generalized and not self.was_solved:
+            print("TODO: saving solution")
+            
+        return is_solved
     def search_step(self, min_move = None):
         if self.is_solved(): return False
         elif self.move_stack.redo(): return True
