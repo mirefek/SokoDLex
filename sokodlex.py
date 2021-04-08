@@ -170,6 +170,7 @@ class SokoGUI(Gtk.Window):
             other_goal = (self.dual_state.sub_boxes, self.storekeeper_goal)
         )
         if is_solved and not self.move_stack.was_generalized() and not self.was_solved:
+            self.was_solved = True
             bw_move_stack, fw_move_stack = self.move_stacks
             fw_actions = fw_move_stack.get_past_actions()
             bw_actions = bw_move_stack.get_past_actions()

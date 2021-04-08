@@ -10,7 +10,7 @@ by examining all possible moves. A deadlock is given by positions of boxes,
 and 'blocked squares' -- positions where it is known that there is no box, these
 can be useful for deadlocks in storage packing.
 
-![Level1](screenshot1.png) ![Level2](screenshot2.png)
+![Level1](images/screenshot1.png) ![Level2](images/screenshot2.png)
 
 ## Dependencies
 + Python3
@@ -38,3 +38,31 @@ can be useful for deadlocks in storage packing.
 | 'S' | Repeat search steps |
 | 'a' / 'A' | Enable all boxes / all squares |
 | 'x' / 'X' | Invert all boxes / all blocked squares |
+
+## Example usage
+
+Press 'p' to let SokoDLex try some moves.
+
+![Example1](images/example1.png)
+
+Press 'x' hide all boxes
+
+![Example2](images/example2.png)
+
+Select a deadlock with the right button.
+
+![Example3](images/example3.png)
+
+Press 's' to let SokoDLex examine the current position. If there are no available moves,
+sokodlex will go back in undo history to a position not blocked by this deadlock,
+and try another move.
+
+![Example4](images/example4.png)
+
+Continue marking deadlocks this way while you see them, or just letting SokoDLex play when you don't see them. After marking 15 deadlocks, I ended up in the following state (but the random play is undeterministic).
+
+![Example5](images/example5.png)
+
+Random play refuses to continue because it doesn't want to repeat a state which is already in the undo history. So let's just backtrack from the state with the 's' key, and run 'p' again. Finally, the level is solved.
+
+![Example6](images/example6.png)
