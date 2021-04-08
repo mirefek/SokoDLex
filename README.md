@@ -4,7 +4,7 @@ Sokoban Deadlock Examiner
 ## Description
 
 SokoDLex is a tool for solving Sokoban levels, and examining its deadlocks.
-Unlike other sokoban programs, SokoDLex is not finding the deadlocks by itself
+Unlike other sokoban programs, SokoDLex cannot find deadlocks by itself
 but allows user to prove that such box configurations indeed form a deadlock
 by examining all possible moves. A deadlock is given by positions of boxes,
 and 'blocked squares' -- positions where it is known that there is no box, these
