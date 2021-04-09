@@ -214,7 +214,9 @@ class SokoGUI(Gtk.Window):
         return is_solved
     def search_step(self, min_move = None):
         if self.is_solved(): return False
-        elif self.move_stack.redo(): return True
+        if self.move_stack.redo():
+            if self.move_stack.is_locked(): self.move_stack.undo()
+            else: return True
 
         if self.move_stack.search_step(heuristic = self.heuristic, min_move = min_move):
             return True

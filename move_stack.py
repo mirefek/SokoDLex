@@ -290,7 +290,7 @@ class MoveStack:
         for yx in nbox_union: sup_intersection = False
 
         dl_to_discard = []
-        cur_viable = False
+        cur_viable = bool(nbox_union)
 
         # go through moves backwards
         for i in range(self.cur_move_i-1, -1, -1):
@@ -308,6 +308,7 @@ class MoveStack:
                     and ((state.sup_boxes > base_state.sup_boxes) & sup_intersection).any()
                 )
 
+            print(i, cur_viable)
             if not cur_viable: continue
             if self.state_locks[i].stack_index < 0: continue
             elif self.state_locks[i].stack_index != i:
