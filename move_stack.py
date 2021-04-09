@@ -308,7 +308,6 @@ class MoveStack:
                     and ((state.sup_boxes > base_state.sup_boxes) & sup_intersection).any()
                 )
 
-            print(i, cur_viable)
             if not cur_viable: continue
             if self.state_locks[i].stack_index < 0: continue
             elif self.state_locks[i].stack_index != i:
