@@ -81,6 +81,7 @@ class SokoGUI(Gtk.Window):
         self.was_solved = False
         self.update_box_jumps()
         self.level_var_dir = level_var_dir
+        self.level_basename = level_basename
 
     def update_box_jumps(self):
         self.box_jumps = dict()
@@ -636,7 +637,7 @@ class SokoGUI(Gtk.Window):
         self.grid_center /= 2
 
         cr.rectangle(0,0, screen_width, screen_height)
-        move_counter_color = (1,1,1)
+        text_color = (1,1,1)
         if self.is_solved():
             cr.set_source_rgb(0.0, 0.5, 0.0)
         elif self.move_stack.is_locked():
@@ -645,7 +646,7 @@ class SokoGUI(Gtk.Window):
             else:
                 cr.set_source_rgb(0.3, 0.3, 0.3)
         else:
-            move_counter_color = (0,0,0)
+            text_color = (0,0,0)
             cr.set_source_rgb(0.5, 0.5, 0.5)
         cr.fill()
 
@@ -671,12 +672,16 @@ class SokoGUI(Gtk.Window):
         cr.restore()
 
         cr.set_font_size(20)
-        cr.set_source_rgb(*move_counter_color)
+        cr.set_source_rgb(*text_color)
         cr.move_to(10, screen_height-7)
+        cr.show_text(self.level_basename)
+
         bw_moves, fw_moves = [stack.cur_move_i for stack in self.move_stacks]
         if bw_moves:
             text = "{} + {}".format(fw_moves, bw_moves)
         else: text = str(fw_moves)
+        _, _, _, _, dx, _ = cr.text_extents(text)
+        cr.move_to(screen_width-10-dx, screen_height-7)
         cr.show_text(text)
 
     # drawing the level
