@@ -2,14 +2,13 @@ from collections import defaultdict
 from itertools import combinations, chain
 import sys
 import os
+import random
 
 from helpers import *
 from directions import *
 from digraph import Digraph
 from soko_state import SokoState
 from component2d import get_component, component_split
-
-debug = False
 
 class Deadlock:
     __slots__ = ["boxes", "not_boxes", "sk_component",
@@ -203,32 +202,24 @@ class DeadlockSet:
 
     def find_by_state(self, state, ori_state = None):
 
-        if ori_state is None:
-            new_boxes = positions_true(state.sub_boxes)
-            ori_boxes = ()
-        else:
-            new_boxes = positions_true(state.sub_boxes & ~ori_state.sub_boxes)
-            ori_boxes = positions_true(state.sub_boxes)
+        sub_boxes = state.sub_boxes
+        if state.sub_full: sup_boxes = sub_boxes
+        else: sup_boxes = state.sup_boxes
 
-        if state.sub_full:
-            ori_nboxes = None
-            if ori_state is None:
-                new_nboxes = positions_true(state.available & ~state.sub_boxes)
-            elif ori_state.sub_full:
-                new_nboxes = ()
-            else:
-                new_nboxes = positions_true(ori_state.sup_boxes & ~state.sub_boxes)
+        if ori_state is None:
+            ori_sub_boxes = np.zeros_like(state.available)
+            ori_sup_boxes = state.available
         else:
-            nboxes = state.available & ~state.sup_boxes
-            if ori_state is None:
-                new_nboxes = positions_true(nboxes)
-                ori_nboxes = ()
-            elif ori_state.sub_full:
-                new_nboxes = ()
-                ori_nboxes = positions_true(nboxes)
+            ori_sub_boxes = ori_state.sub_boxes
+            if ori_state.sub_full:
+                ori_sup_boxes = ori_state.sub_boxes
             else:
-                new_nboxes = positions_true(nboxes & ori_state.sup_boxes)
-                ori_nboxes = positions_true(nboxes)
+                ori_sup_boxes = ori_state.sup_boxes
+
+        ori_boxes = positions_true(sub_boxes)
+        ori_nboxes = positions_true(~sup_boxes & state.available)
+        new_boxes = positions_true(sub_boxes & ~ori_sub_boxes)
+        new_nboxes = positions_true(~sup_boxes & ori_sup_boxes)
 
         if state.storekeepers is not None:
             storekeeper = state.storekeeper
@@ -291,6 +282,9 @@ class DeadlockStack:
         self.dl_set = dl_set
         self._last_full_index = -1
 
+        self.debug_data = []
+        self.debug_fname = "bug.log"
+
         if fname is not None:
             assert sample_state is not None
             if os.path.exists(fname):
@@ -314,6 +308,10 @@ class DeadlockStack:
 
                 if blocks is not None:
                     for dl in chain.from_iterable(blocks):
+                        self.debug_data.append(
+                            "dummy_deadlocks[{}] = make_dummy_deadlock({})".format(
+                                id(dl), dl.full_index
+                            ))
                         self.dl_set.add(dl)
                         self._last_full_index = dl.full_index
                     print("loaded {} deadlocks".format(self._last_full_index+1))
@@ -322,10 +320,10 @@ class DeadlockStack:
         assert stack_index >= 0
         if isinstance(deadlock, SokoState):
             deadlock = deadlock_from_state(deadlock)
-        if debug:
-            print("dummy_deadlocks[{}] = dl_stack.add(make_dummy_deadlock(), {})".format(
+        self.debug_data.append(
+            "dummy_deadlocks[{}] = dl_stack.add(make_dummy_deadlock(), {})".format(
                 id(deadlock), stack_index,
-            ), flush = True)
+            ))
         deadlock.stack_index = stack_index
         self.dl_set.add(deadlock)
         self.dependencies.add_node_B(deadlock)
@@ -335,10 +333,10 @@ class DeadlockStack:
     # discards also deadlocks dependent on it
     def remove(self, deadlocks):
         if isinstance(deadlocks, Deadlock): deadlocks = [deadlocks]
-        if debug:
-            print('dl_stack.remove([dummy_deadlocks[i] for i in {}])'.format(
+        self.debug_data.append(
+            "dl_stack.remove([dummy_deadlocks[i] for i in {}])".format(
                 [id(dl) for dl in deadlocks]
-            ), flush = True)
+            ))
         dependent = self.dependencies.closure_BA(deadlocks)
         for deadlock in dependent:
             self.dl_set.remove(deadlock)
@@ -354,79 +352,90 @@ class DeadlockStack:
         deadlock.full_index = self._last_full_index
 
     def set_descendants(self, deadlock, pushes, descendants):
-        if debug:
-            print("dl_stack.set_descendants({}, {}, {})".format(
-                  id(deadlock), [None]*len(descendants),
+        self.debug_data.append(
+            "dl_stack.set_descendants({}, [None]*{}, [dummy_deadlocks[i] for i in {}])".format(
+                  id(deadlock), len(descendants),
                   [id(dl) for dl in descendants],
-            ), flush = True)
-        assert deadlock.descendants is None
-        assert len(pushes) == len(descendants)
-        if debug: self.check_correct()
-        deadlock.descendants = dict(zip(pushes, descendants))
+            ))
 
-        # add to dependency graph
+        try:
 
-        self.dependencies.add_node_A(deadlock)
-        for descendant in descendants:
-            if descendant.stack_index >= 0:
-                self.dependencies.add_edge(deadlock, descendant)
+            assert deadlock.descendants is None
+            assert len(pushes) == len(descendants)
+            deadlock.descendants = dict(zip(pushes, descendants))
 
-        # update stack_index where necessary
+            # add to dependency graph
 
-        to_check = self.dependencies.closure_BA([deadlock])
-        ori_stack_index = deadlock.stack_index
-        assert all(dl.stack_index == ori_stack_index for dl in to_check)
+            self.dependencies.add_node_A(deadlock)
+            for descendant in descendants:
+                if descendant.stack_index >= 0:
+                    self.dependencies.add_edge(deadlock, descendant)
 
-        # find elements of to_check looking outside
-        new_stack_indices = defaultdict(list)
-        for dl in to_check:
-            new_stack_index = max([
-                desc.stack_index for desc in self.dependencies.neighbors_A(dl)
-                if desc.stack_index != ori_stack_index
-            ], default = -1)
-            if new_stack_index >= 0:
-                assert (new_stack_index < ori_stack_index), (new_stack_index, ori_stack_index)
-                new_stack_indices[new_stack_index].append((dl, new_stack_index))
-        dfs_stack = list(chain.from_iterable(
-            new_stack_indices[i]
-            for i in sorted(new_stack_indices.keys())
-        ))
+            # update stack_index where necessary
 
-        # propagate the right stack_index backwards
-        to_check_l = []
-        size_of_index = defaultdict(int)
-        while dfs_stack:
-            dl,i = dfs_stack.pop()
-            if dl not in to_check: continue
-            to_check_l.append(dl)
-            size_of_index[i] += 1
-            to_check.remove(dl)
-            dl.stack_index = i
-            dfs_stack.extend(
-                (dl2, i)
-                for dl2 in self.dependencies.neighbors_B(dl)
-            )
+            to_check = self.dependencies.closure_BA([deadlock])
+            ori_stack_index = deadlock.stack_index
+            assert all(dl.stack_index == ori_stack_index for dl in to_check)
 
-        # mark a strongly connected component as a full deadlock
-        scc = list(to_check)
-        if scc:
-            for dl in scc: self.make_full(dl)
+            # find elements of to_check looking outside
+            new_stack_indices = defaultdict(list)
+            for dl in to_check:
+                new_stack_index = max([
+                    desc.stack_index for desc in self.dependencies.neighbors_A(dl)
+                    if desc.stack_index != ori_stack_index
+                ], default = -1)
+                if new_stack_index >= 0:
+                    assert (new_stack_index < ori_stack_index), (new_stack_index, ori_stack_index)
+                    new_stack_indices[new_stack_index].append((dl, new_stack_index))
+            dfs_stack = list(chain.from_iterable(
+                new_stack_indices[i]
+                for i in sorted(new_stack_indices.keys())
+            ))
 
-            if self.fname is not None:
-                with open(self.fname, 'a') as f:
-                    print(file = f)
-                    for dl in scc: dl.print_self(file = f)
-                if len(scc) == 1:
-                    print("Saved deadlock {}".format(scc[0].full_index))
-                else:
-                    print("Saved deadlocks {}-{}".format(
-                        scc[0].full_index, scc[-1].full_index
-                    ))
-                
-        # output for checking on path
-        to_check_l.reverse()
-        if debug: self.check_correct()
-        return scc, scc+to_check_l, size_of_index
+            # propagate the right stack_index backwards
+            to_check_l = []
+            size_of_index = defaultdict(int)
+            while dfs_stack:
+                dl,i = dfs_stack.pop()
+                if dl not in to_check: continue
+                to_check_l.append(dl)
+                size_of_index[i] += 1
+                to_check.remove(dl)
+                dl.stack_index = i
+                dfs_stack.extend(
+                    (dl2, i)
+                    for dl2 in self.dependencies.neighbors_B(dl)
+                )
+
+            # mark a strongly connected component as a full deadlock
+            scc = list(to_check)
+            if scc:
+                for dl in scc: self.make_full(dl)
+
+                if self.fname is not None:
+                    with open(self.fname, 'a') as f:
+                        print(file = f)
+                        for dl in scc: dl.print_self(file = f)
+                    if len(scc) == 1:
+                        print("Saved deadlock {}".format(scc[0].full_index))
+                    else:
+                        print("Saved deadlocks {}-{}".format(
+                            scc[0].full_index, scc[-1].full_index
+                        ))
+
+            # output for checking on path
+            to_check_l.reverse()
+            return scc, scc+to_check_l, size_of_index
+
+        except Exception:
+            if self.debug_fname is not None:
+                with open(self.debug_fname, 'w') as f:
+                    for l in self.debug_data:
+                        print(l, file = f)
+                print("error in DeadlockStack occured, debug data stored in "+self.debug_fname)
+                self.debug_fname = None
+
+            raise
 
     def check_correct(self):
         for dl in self.dependencies.nodes_A():
