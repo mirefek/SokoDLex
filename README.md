@@ -33,7 +33,7 @@ can be useful for deadlocks in storage packing.
 | Enter, 'r' | Undo to beginning |
 | shift+Enter, 'R' | Redo to end |
 | Space | Swap to dual mode |
-| 'p' | Play randomly with a tendency to push boxes towards storages |
+| 'd' | Play randomly with a tendency to push boxes towards storages |
 | 's' | If there is an available move, apply it, otherwise store a deadlock go back |
 | 'S' | Repeat search steps |
 | 'a' / 'A' | Enable all boxes / all squares |
@@ -41,7 +41,7 @@ can be useful for deadlocks in storage packing.
 
 ## Example usage
 
-Press 'p' to let SokoDLex try some moves.
+Press 'd' to let SokoDLex try some moves.
 
 ![Example1](images/example1.png)
 
@@ -63,6 +63,6 @@ Continue marking deadlocks this way while you see them, or just letting SokoDLex
 
 ![Example5](images/example5.png)
 
-Random play refuses to continue because it doesn't want to repeat a state which is already in the undo history. So let's just backtrack from the state with the 's' key, and run 'p' again. Finally, the level is solved.
+Random play refuses to continue because it doesn't want to repeat a state which is already in the undo history. So let's just backtrack from the state with the 's' key, and run 'd' again. Finally, the level is solved.
 
 ![Example6](images/example6.png)

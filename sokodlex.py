@@ -283,7 +283,7 @@ class SokoGUI(Gtk.Window):
                 self.timer_start(self.autosearch, self.move_stack.cur_move_i)
             else:
                 self.cancel()
-        elif keyval_name == 'p':
+        elif keyval_name == 'd':
             self.cancel_box_jumps()
             if self.timer_id is None:
                 self.cancel()
@@ -503,7 +503,7 @@ class SokoGUI(Gtk.Window):
             or self.active_box is not None
         )
         self.timer_stop()
-        if self.dragged is not None and dragged[-1] == 'moved':
+        if self.dragged is not None and self.dragged[-1] == 'moved':
             self.update_box_jumps()
         self.dragged = None
         self.active_box = None
