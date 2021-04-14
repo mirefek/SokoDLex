@@ -250,7 +250,7 @@ class MoveStack:
             last_move_i = self.cur_move_i
             while self.is_locked():
                 if self.cur_move_i == min_move:
-                    print("Not solvable")
+                    # print("Not solvable")
                     return False
                 self.undo()
 

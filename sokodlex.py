@@ -10,6 +10,7 @@ import os
 import random
 
 from move_stack import MoveStack
+from auto_select import AutoSelect
 from data_loader import load_xsb_levels
 from soko_state import *
 from directions import *
@@ -79,6 +80,7 @@ class SokoGUI(Gtk.Window):
             dual_move_stack, move_stack
         ]
         self.was_solved = False
+        self.auto_selection = AutoSelect(move_stack, self.heuristic)
         self.update_box_jumps()
         self.level_var_dir = level_var_dir
         self.level_basename = level_basename
@@ -267,6 +269,16 @@ class SokoGUI(Gtk.Window):
             d = key_to_dir[keyval_name]
             redraw = self.basic_move(d)
             self.cancel(redraw = redraw)
+        elif keyval_name == 'p':
+            self.auto_selection.step()
+            self.cancel()
+        elif keyval_name == 'P':
+            self.cancel_box_jumps()
+            if self.timer_id is None:
+                self.cancel()
+                self.timer_start(self.auto_selection.step)
+            else:
+                self.cancel()
         elif keyval_name == 'space':
             self.move_stack.revert_generalizations()
             self.fw_mode = not self.fw_mode
@@ -280,14 +292,14 @@ class SokoGUI(Gtk.Window):
             self.cancel_box_jumps()
             if self.timer_id is None:
                 self.cancel()
-                self.timer_start(self.autosearch, self.move_stack.cur_move_i)
+                self.timer_start(self.search_step, self.move_stack.cur_move_i)
             else:
                 self.cancel()
         elif keyval_name == 'd':
             self.cancel_box_jumps()
             if self.timer_id is None:
                 self.cancel()
-                self.timer_start(self.autoplay, None)
+                self.timer_start(self.auto_move)
                 self.move_stack.revert_generalizations()
             else:
                 self.cancel()
@@ -516,25 +528,19 @@ class SokoGUI(Gtk.Window):
             GLib.source_remove(self.timer_id)
             self.timer_id = None
             self.update_box_jumps()
-    def timer_start(self, f, arg):
+    def timer_start(self, *f_args):
+        self.cancel_box_jumps()
         self.timer_stop()
-        self.timer_id = GLib.timeout_add(30, f, arg)
+        self.timer_id = GLib.timeout_add(30, self.timer_step, f_args)
 
-    def autoplay(self, arg):
-        repeat = self.auto_move()
+    def timer_step(self, f_args):
+        f, *args = f_args
+        repeat = f(*args)
         self.darea.queue_draw()
         if not repeat:
             self.update_box_jumps()
             self.timer_id = None
         return repeat
-
-    def autosearch(self, min_move):
-        repeat = self.search_step(min_move = min_move)
-        self.darea.queue_draw()
-        if not repeat:
-            self.update_box_jumps()
-            self.timer_id = None
-        return repeat # so that it is called again
 
     # drawing
     def draw_to_yx(self, cr, draw_method, yx, base1_index = False):
@@ -640,7 +646,7 @@ class SokoGUI(Gtk.Window):
 
         cr.rectangle(0,0, screen_width, screen_height)
         text_color = (1,1,1)
-        if self.is_solved():
+        if self.is_solved() or self.auto_selection.is_solvable(self.state):
             cr.set_source_rgb(0.0, 0.5, 0.0)
         elif self.move_stack.is_locked():
             if self.move_stack.is_locked_full():
