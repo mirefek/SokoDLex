@@ -353,7 +353,7 @@ class DeadlockStack:
 
     def set_descendants(self, deadlock, pushes, descendants):
         self.debug_data.append(
-            "dl_stack.set_descendants({}, [None]*{}, [dummy_deadlocks[i] for i in {}])".format(
+            "dl_stack.set_descendants(dummy_deadlocks[{}], [None]*{}, [dummy_deadlocks[i] for i in {}])".format(
                   id(deadlock), len(descendants),
                   [id(dl) for dl in descendants],
             ))
