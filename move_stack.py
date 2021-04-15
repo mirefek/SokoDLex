@@ -53,14 +53,11 @@ class MoveStack:
     def is_locked_full(self): return self.cur_lock.stack_index < 0
 
     def drop_redo(self):
-        #print("<drop_redo>", self.cur_move_i, len(self.moves))
-        #print(list((i,dl.stack_index) for (i,dl) in enumerate(self.state_locks)))
         if (self.first_generalization is not None
             and self.first_generalization > self.cur_move_i):
             self.first_generalization = None
         dl_to_discard = []
         for i in range(self.cur_move_i+1, len(self.state_locks)):
-            #print(i)
             if self.state_locks[i].stack_index == i:
                 dl_to_discard.append(self.state_locks[i])
         self.deadlocks.remove(dl_to_discard)
@@ -69,8 +66,6 @@ class MoveStack:
         del self.gener_states[self.cur_move_i+1:]
         del self.state_locks[self.cur_move_i+1:]
         del self.moves[self.cur_move_i:]
-        #print(list((i,dl.stack_index) for (i,dl) in enumerate(self.state_locks)))
-        #print("</drop_redo>")
 
     def generalize(self, state, check = True):
         if check: assert self.base_state.is_generalized_by(state)
@@ -298,7 +293,7 @@ class MoveStack:
             drop_num = index_to_drop_num.get(i, 0)
             if drop_num:
                 del to_check[-drop_num:]
-                if not to_check: return
+                if not to_check: break
 
             state = self.gener_states[i+1]
             base_state = self.base_states[i+1]
