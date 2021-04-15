@@ -78,7 +78,8 @@ class AutoSelect:
     def add_solvable_exact(self, boxes, sks):
         sks_ori = self.solvable_exact.setdefault(boxes, sks)
         if sks_ori is not sks:
-            sks_ori |= sks
+            self.solvable_exact[boxes] = sks_ori | sks
+
     def is_solvable_exact(self, boxes, sk):
         sks = self.solvable_exact.get(boxes, None)
         if sks is None: return False
