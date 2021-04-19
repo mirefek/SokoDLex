@@ -443,7 +443,7 @@ class DeadlockStack:
                 dl2.stack_index for dl2 in dl.descendants.values()
             ], default = -1)
 
-def deadlocks_from_file(fname, base_state):
+def deadlocks_from_file(fname, base_state, check_dependencies = False):
 
     def tokenized_lines_gen(f):
         for line in f:
@@ -529,7 +529,8 @@ def deadlocks_from_file(fname, base_state):
                         action : dl_list[i]
                         for action, i in action_data
                     }
-                    #deadlock.check_dependencies(base_state)
+                    if check_dependencies:
+                        deadlock.check_dependencies(base_state)
                 yield [dl for dl,_ in cur_block]
                 cur_block = []
         assert not cur_block
