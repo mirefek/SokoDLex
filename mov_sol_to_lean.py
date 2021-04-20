@@ -44,7 +44,7 @@ for line in encode_sokoban_level_to_lines(level):
 print('"')
 print()
 print("theorem {}.solvable : {}.solvable :=".format(level_fname, level_fname))
-print("begin [show_sokolevel]")
+print("begin [show_sokolevel_w]")
 for d in sol:
     print("  sokolevel.solve_{},".format(dir_to_str(d).lower()))
 print("  sokolevel.solve_finish")

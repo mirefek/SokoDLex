@@ -115,7 +115,7 @@ for block in dl_blocks:
         print_dl_analysis(dl, dl.full_index, "  ")
         print("end")
         print()
-        print("#check dl{}_dl".format(dl.full_index))
+        print("#html dl{}_dl.to_html".format(dl.full_index))
         print()
     else:
         for dl in block: print(dl_to_lean_def(dl))
@@ -144,11 +144,12 @@ for block in dl_blocks:
         print("  },")
         print("end")
         print()
-        print("#check {}".format(thm_name))
-        print()
         for i,dl in enumerate(block):
             print(dl_theorem(dl))
             print(":= " + thm_name + ".2"*i + ".1")
+        print()
+        for dl in block:
+            print("#html dl{}_dl.to_html".format(dl.full_index))
         print()
 
 print("end {}".format(level_fname))

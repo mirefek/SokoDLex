@@ -66,3 +66,9 @@ Continue marking deadlocks this way while you see them, or just letting SokoDLex
 Random play refuses to continue because it doesn't want to repeat a state which is already in the undo history. So let's just backtrack from the state with the 's' key, and run 'd' again. Finally, the level is solved.
 
 ![Example6](images/example6.png)
+
+## Lean Export
+
+Python scripts `mov_sol_to_lean.py`, and `deadlocks_to_lean.py` can be run to data produced in the `var`
+directory of SokoDLex. They produce a Lean code for
+[sokoban.lean](https://github.com/mirefek/sokoban.lean).
