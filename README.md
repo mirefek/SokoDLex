@@ -69,6 +69,7 @@ Random play refuses to continue because it doesn't want to repeat a state which 
 
 ## Lean Export
 
-Python scripts `mov_sol_to_lean.py`, and `deadlocks_to_lean.py` can be run to data produced in the `var`
+Python scripts `mov_sol_to_lean.py`, and `deadlocks_to_lean.py`
+can be run on data produced in the `var`
 directory of SokoDLex. They produce a Lean code for
 [sokoban.lean](https://github.com/mirefek/sokoban.lean).
