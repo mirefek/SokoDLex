@@ -17,8 +17,10 @@ class AutoSelect:
         for sk, sks in component_split(available & ~storages):
             self.add_solvable(storages, sk, sks)
         self.forbid_gener = None
+        self.steps = 0
 
     def step(self):
+        self.steps += 1
         if self.stack.is_locked():
             if self.forbid_gener == self.stack.cur_move_i:
                 self.forbid_gener = None

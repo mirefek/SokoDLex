@@ -269,6 +269,8 @@ class SokoGUI(Gtk.Window):
             d = key_to_dir[keyval_name]
             redraw = self.basic_move(d)
             self.cancel(redraw = redraw)
+        elif keyval_name == 'o':
+            print(self.auto_selection.steps)
         elif keyval_name == 'p':
             self.auto_selection.step()
             self.cancel()
