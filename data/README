@@ -1,3 +1,3 @@
 By default, SokoDLex expects a directory "Large Test Suite Sets" here, which can be downloaded from:
-https://sourceforge.net/projects/jsokoapplet/files/Wiki/Large%20Test%20Suite.zip/download
+https://sourceforge.net/projects/sokoban-solver-statistics/files/Large%20Test%20Suite.zip/download
 However, you can use any sokoban dataset in the xsb format
