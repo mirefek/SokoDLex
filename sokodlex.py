@@ -212,7 +212,7 @@ class SokoGUI(Gtk.Window):
                 len(fw_moves), len(fw_actions)))
 
         return is_solved
-    def search_step(self, min_move = None):
+    def search_step(self, min_move = 0):
         if self.is_solved(): return False
         if self.move_stack.redo():
             if self.move_stack.is_locked(): self.move_stack.undo()
@@ -751,7 +751,7 @@ if __name__ == "__main__":
 
     parser.add_argument('level', type=int, nargs='?', default = 1, help='Level number 1 ... len(levels)')
     parser.add_argument('levelset', type=str, nargs='?',
-                        default = './data/Large Test Suite Sets/XSokoban_90.xsb',
+                        default = './data/Large Test Suite/XSokoban_90.xsb',
                         help='file to load the level set (in xsb format)')
     args = parser.parse_args()
 
