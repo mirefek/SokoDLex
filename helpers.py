@@ -1,14 +1,7 @@
 import numpy as np
 
-def np_coor(shape, axis):
-    shape_range = [1]*len(shape)
-    shape_tile = list(shape)
-    l = shape[axis]
-    shape_range[axis] = l
-    shape_tile[axis] = 1
-    return np.tile(np.arange(l).reshape(shape_range), shape_tile)
 def np_all_positions(shape):
-    return np.stack([np_coor(shape, i) for i in range(len(shape))], axis = -1)
+    return np.moveaxis(np.indices(shape), 0, -1)
 def positions_true(a):
     return tuple(map(tuple, np_all_positions(a.shape)[a]))
 
